@@ -1,3 +1,10 @@
+// Package rateLimiter provides a flexible and robust rate limiting middleware for Go applications
+// using the Fiber web framework. It supports both HTTP and WebSocket connections with configurable
+// policies and multiple storage backends.
+//
+// The package implements a token bucket algorithm for rate limiting, which allows for handling
+// traffic bursts while maintaining overall rate limits. It supports both Redis and in-memory
+// storage backends, with automatic fallback to in-memory storage when Redis is unavailable.
 package rateLimiter
 
 import (
@@ -5,6 +12,24 @@ import (
 	"github.com/gofiber/websocket/v2"
 )
 
+// RateLimiter creates a new rate limiting middleware for Fiber applications.
+// It takes a RateLimiterConfig struct that defines the rate limiting behavior
+// and returns a Fiber middleware handler.
+//
+// The middleware automatically handles both HTTP and WebSocket requests, applying
+// the appropriate rate limiting policies based on the user's tier. It supports
+// path-based exclusions and provides detailed rate limit information in response headers.
+//
+// Example:
+//
+//	app := fiber.New()
+//	config := RateLimiterConfig{
+//		Redis: redisClient,
+//		TierPolicy: map[string]Policy{
+//			"free": {MaxRequests: 100, Window: time.Hour},
+//		},
+//	}
+//	app.Use(RateLimiter(config))
 func RateLimiter(cfg RateLimiterConfig) fiber.Handler {
 	var primaryStorage Storage
 	var fallbackStorage Storage = NewInMemoryStorage()

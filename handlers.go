@@ -105,7 +105,6 @@ func HandleHTTPRequest(c *fiber.Ctx, primaryStorage, fallbackStorage Storage, cf
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
 			"error":       "rate limit exceeded",
 			"limit":       policy.MaxRequests,
-			"window_secs": int(policy.Window.Seconds()),
 			"retry_after": retryAfter,
 			"tier":        tier,
 		})

@@ -14,7 +14,6 @@ func TestCheckTokenBucket(t *testing.T) {
 	// Test policy with 2 tokens per second and burst capacity of 5
 	policy := Policy{
 		MaxRequests:      100,
-		Window:           time.Hour,
 		BurstCapacity:    5,
 		TokensPerSecond:  2.0,
 		WebSocketAllowed: true,

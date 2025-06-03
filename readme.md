@@ -45,14 +45,12 @@ func main() {
     policies := map[string]rateLimiter.Policy{
         "free": {
             MaxRequests:     100,
-            Window:         1 * time.Hour,
             BurstCapacity:  10,
             TokensPerSecond: 0.1,
             WebSocketAllowed: false,
         },
         "premium": {
             MaxRequests:     1000,
-            Window:         1 * time.Hour,
             BurstCapacity:  50,
             TokensPerSecond: 0.5,
             WebSocketAllowed: true,
@@ -62,7 +60,6 @@ func main() {
     // Default policy for unknown tiers
     defaultPolicy := rateLimiter.Policy{
         MaxRequests:     50,
-        Window:         1 * time.Hour,
         BurstCapacity:  5,
         TokensPerSecond: 0.05,
         WebSocketAllowed: false,
@@ -122,7 +119,6 @@ Each policy defines the rate limiting rules for a specific tier:
 ```go
 type Policy struct {
     MaxRequests      int           // Maximum requests allowed in the window
-    Window           time.Duration // Time window for rate limiting
     BurstCapacity    int           // Maximum burst capacity
     TokensPerSecond  float64       // Token refill rate
     WebSocketAllowed bool          // Whether WebSockets are allowed
