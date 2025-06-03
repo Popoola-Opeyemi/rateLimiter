@@ -15,7 +15,8 @@ A flexible and robust rate limiting middleware for Go applications using the Fib
 ## Installation
 
 ```bash
-go get github.com/yourusername/rateLimiter
+
+go get github.com/Popoola-Opeyemi/rateLimiter
 ```
 
 ## Quick Start
