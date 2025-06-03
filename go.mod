@@ -1,4 +1,4 @@
-module rateLimiter
+module github.com/Popoola-Opeyemi/rateLimiter
 
 go 1.24.1
 
