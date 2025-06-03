@@ -26,8 +26,33 @@ import (
 //	config := RateLimiterConfig{
 //		Redis: redisClient,
 //		TierPolicy: map[string]Policy{
-//			"free": {MaxRequests: 100, Window: time.Hour},
+//			"free": {
+//				MaxRequests:      1000,        // Allow up to 1000 requests per window
+//				BurstCapacity:    50,          // Allow bursts of up to 50 requests
+//				TokensPerSecond:  1.0,         // Allow 1 request per second in steady state
+//				WebSocketAllowed: false,
+//			},
+//			"pro": {
+//				MaxRequests:      5000,        // Allow up to 5000 requests per window
+//				BurstCapacity:    200,         // Allow bursts of up to 200 requests
+//				TokensPerSecond:  5.0,         // Allow 5 requests per second in steady state
+//				WebSocketAllowed: true,
+//			},
 //		},
+//		DefaultPolicy: Policy{
+//			MaxRequests:      500,           // Default to 500 requests per window
+//			BurstCapacity:    25,            // Default burst of 25 requests
+//			TokensPerSecond:  0.5,           // Default to 0.5 requests per second
+//			WebSocketAllowed: false,
+//		},
+//		KeyPrefix: "rl",
+//		GetUserID: func(c *fiber.Ctx) string {
+//			return c.Get("X-User-ID")
+//		},
+//		GetUserTier: func(c *fiber.Ctx) string {
+//			return c.Get("X-User-Tier")
+//		},
+//		SkipPaths: []string{"/metrics", "/health"},
 //	}
 //	app.Use(RateLimiter(config))
 func RateLimiter(cfg RateLimiterConfig) fiber.Handler {

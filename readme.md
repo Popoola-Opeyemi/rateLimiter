@@ -1,94 +1,99 @@
 # Rate Limiter
 
-A flexible and robust rate limiting middleware for Go applications using the Fiber web framework. This rate limiter supports both HTTP and WebSocket connections, with configurable policies and multiple storage backends.
+A flexible and robust rate limiting middleware for Go applications using the Fiber web framework. It supports both HTTP and WebSocket connections with configurable policies and multiple storage backends.
 
 ## Features
 
-- HTTP and WebSocket rate limiting
-- Configurable rate limiting policies per user tier
-- Redis and in-memory storage support
-- Token bucket algorithm for burst handling
-- Customizable user identification and tier assignment
-- Path-based rate limiting exclusions
-- Fallback storage mechanism
+- Token bucket algorithm for rate limiting
+- Support for both Redis and in-memory storage
+- Configurable policies per user tier
+- WebSocket rate limiting
+- Security features:
+  - Bypass tokens
+  - IP whitelisting
+  - Authentication-based rate limiting
+  - Progressive IP blocking
+  - Failed attempt tracking
+- Detailed rate limit headers
+- Path-based exclusions
+- Automatic fallback to in-memory storage
 
 ## Installation
 
 ```bash
-
-go get github.com/Popoola-Opeyemi/rateLimiter
+go get github.com/yourusername/rateLimiter
 ```
 
 ## Quick Start
-
-Here's a basic example of how to use the rate limiter in your Fiber application:
 
 ```go
 package main
 
 import (
     "github.com/gofiber/fiber/v2"
-    "github.com/redis/go-redis/v9"
     "github.com/yourusername/rateLimiter"
-    "time"
 )
 
 func main() {
     app := fiber.New()
 
-    // Configure Redis client (optional)
-    redisClient := redis.NewClient(&redis.Options{
-        Addr: "localhost:6379",
-    })
-
-    // Define rate limiting policies
-    policies := map[string]rateLimiter.Policy{
-        "free": {
-            MaxRequests:     100,
-            BurstCapacity:  10,
-            TokensPerSecond: 0.1,
+    // Initialize rate limiter
+    app.Use(rateLimiter.RateLimiter(rateLimiter.RateLimiterConfig{
+        Redis: cache, // Can be nil to use in-memory only
+        TierPolicy: map[string]rateLimiter.Policy{
+            "free": {
+                MaxRequests:      1000,
+                BurstCapacity:    50,
+                TokensPerSecond:  1.0,
+                WebSocketAllowed: false,
+                Security: rateLimiter.SecurityConfig{
+                    RequireAuthentication: true,
+                    MaxFailedAttempts:    5,
+                    BlockDuration:        15 * time.Minute,
+                },
+            },
+            "pro": {
+                MaxRequests:      5000,
+                BurstCapacity:    200,
+                TokensPerSecond:  5.0,
+                WebSocketAllowed: true,
+                Security: rateLimiter.SecurityConfig{
+                    RequireAuthentication: false,
+                    MaxFailedAttempts:    10,
+                    BlockDuration:        5 * time.Minute,
+                },
+            },
+        },
+        DefaultPolicy: rateLimiter.Policy{
+            MaxRequests:      500,
+            BurstCapacity:    25,
+            TokensPerSecond:  0.5,
             WebSocketAllowed: false,
+            Security: rateLimiter.SecurityConfig{
+                RequireAuthentication: true,
+                MaxFailedAttempts:    3,
+                BlockDuration:        30 * time.Minute,
+            },
         },
-        "premium": {
-            MaxRequests:     1000,
-            BurstCapacity:  50,
-            TokensPerSecond: 0.5,
-            WebSocketAllowed: true,
+        GlobalSecurity: rateLimiter.SecurityConfig{
+            BypassTokens: []string{
+                "your-secure-bypass-token-1",
+                "your-secure-bypass-token-2",
+            },
+            WhitelistIPs: []string{
+                "127.0.0.1",
+                "10.0.0.0/24",
+            },
         },
-    }
-
-    // Default policy for unknown tiers
-    defaultPolicy := rateLimiter.Policy{
-        MaxRequests:     50,
-        BurstCapacity:  5,
-        TokensPerSecond: 0.05,
-        WebSocketAllowed: false,
-    }
-
-    // Configure rate limiter
-    config := rateLimiter.RateLimiterConfig{
-        Redis:         redisClient,
-        TierPolicy:    policies,
-        DefaultPolicy: defaultPolicy,
-        KeyPrefix:     "ratelimit:",
+        KeyPrefix: "rl",
         GetUserID: func(c *fiber.Ctx) string {
-            // Implement your user ID extraction logic
             return c.Get("X-User-ID")
         },
         GetUserTier: func(c *fiber.Ctx) string {
-            // Implement your tier determination logic
             return c.Get("X-User-Tier")
         },
-        SkipPaths: []string{"/health", "/metrics"},
-    }
-
-    // Apply rate limiter middleware
-    app.Use(rateLimiter.RateLimiter(config))
-
-    // Your routes here
-    app.Get("/", func(c *fiber.Ctx) error {
-        return c.SendString("Hello, World!")
-    })
+        SkipPaths: []string{"/metrics", "/health"},
+    }))
 
     app.Listen(":3000")
 }
@@ -96,70 +101,213 @@ func main() {
 
 ## Configuration
 
-### RateLimiterConfig
+### Policy Configuration
 
-The rate limiter can be configured using the `RateLimiterConfig` struct:
-
-```go
-type RateLimiterConfig struct {
-    Redis         *redis.Client    // Redis client for distributed rate limiting
-    TierPolicy    map[string]Policy // Rate limiting policies per user tier
-    DefaultPolicy Policy           // Default policy for unknown tiers
-    KeyPrefix     string           // Prefix for rate limit keys in storage
-    GetUserID     func(c *fiber.Ctx) string    // Function to extract user ID
-    GetUserTier   func(c *fiber.Ctx) string    // Function to determine user tier
-    SkipPaths     []string         // Paths to exclude from rate limiting
-}
-```
-
-### Policy
-
-Each policy defines the rate limiting rules for a specific tier:
+Each policy defines rate limiting rules for a specific user tier:
 
 ```go
 type Policy struct {
-    MaxRequests      int           // Maximum requests allowed in the window
-    BurstCapacity    int           // Maximum burst capacity
-    TokensPerSecond  float64       // Token refill rate
-    WebSocketAllowed bool          // Whether WebSockets are allowed
+    // Maximum requests allowed in the time window
+    MaxRequests int
+
+    // Maximum number of requests allowed in a burst
+    BurstCapacity int
+
+    // Rate at which tokens are added to the bucket
+    TokensPerSecond float64
+
+    // Whether WebSocket connections are allowed
+    WebSocketAllowed bool
+
+    // Security settings for this tier
+    Security SecurityConfig
+}
+```
+
+### Security Configuration
+
+Security settings can be configured globally and per tier:
+
+```go
+type SecurityConfig struct {
+    // List of valid bypass tokens
+    BypassTokens []string
+
+    // List of IPs exempt from rate limiting
+    WhitelistIPs []string
+
+    // Whether to enforce stricter limits for unauthenticated requests
+    RequireAuthentication bool
+
+    // Maximum allowed failed attempts before blocking
+    MaxFailedAttempts int
+
+    // How long to block an IP after exceeding max attempts
+    BlockDuration time.Duration
+}
+```
+
+## Security Features
+
+### 1. Bypass Tokens
+
+Bypass tokens allow specific requests to skip rate limiting:
+
+```go
+// In your request
+headers.Set("X-RateLimit-Bypass", "your-secure-bypass-token-1")
+
+// In your configuration
+GlobalSecurity: SecurityConfig{
+    BypassTokens: []string{
+        "your-secure-bypass-token-1",
+        "your-secure-bypass-token-2",
+    },
+}
+```
+
+### 2. IP Whitelisting
+
+Whitelist trusted IPs to bypass rate limiting:
+
+```go
+GlobalSecurity: SecurityConfig{
+    WhitelistIPs: []string{
+        "127.0.0.1",           // Localhost
+        "10.0.0.0/24",         // Internal network
+        "192.168.1.100",       // Specific IP
+    },
+}
+```
+
+### 3. Authentication-based Rate Limiting
+
+Stricter rate limits for unauthenticated requests:
+
+```go
+TierPolicy: map[string]Policy{
+    "free": {
+        Security: SecurityConfig{
+            RequireAuthentication: true,  // Stricter limits for unauthenticated requests
+        },
+    },
+}
+```
+
+### 4. Progressive IP Blocking
+
+IPs are blocked progressively based on failed attempts:
+
+- Base block duration (e.g., 15 minutes)
+- Each additional failed attempt adds 5 minutes
+- Maximum block duration capped at 24 hours
+- Automatic unblocking after duration expires
+
+### 5. Failed Attempt Tracking
+
+Tracks failed attempts on authentication endpoints:
+
+```go
+TierPolicy: map[string]Policy{
+    "free": {
+        Security: SecurityConfig{
+            MaxFailedAttempts: 5,
+            BlockDuration:     15 * time.Minute,
+        },
+    },
+    "pro": {
+        Security: SecurityConfig{
+            MaxFailedAttempts: 10,
+            BlockDuration:     5 * time.Minute,
+        },
+    },
+}
+```
+
+## Response Headers
+
+The rate limiter adds the following headers to responses:
+
+- `X-RateLimit-Limit`: Maximum requests allowed
+- `X-RateLimit-Remaining`: Remaining requests in the current window
+- `X-RateLimit-Reset`: Time when the rate limit resets
+- `Retry-After`: Seconds to wait before retrying (when rate limited)
+
+## Error Responses
+
+When rate limited, the middleware returns a 429 Too Many Requests response:
+
+```json
+{
+    "error": "rate limit exceeded",
+    "limit": 1000,
+    "retry_after": 60,
+    "tier": "free"
+}
+```
+
+For blocked IPs:
+
+```json
+{
+    "error": "IP temporarily blocked due to too many failed attempts",
+    "retry_after": 900,
+    "block_remaining": "15m0s",
+    "failed_attempts": 5
 }
 ```
 
 ## Storage Backends
 
-The rate limiter supports two storage backends:
+### Redis Storage
 
-1. **Redis Storage**: For distributed rate limiting across multiple instances
-2. **In-Memory Storage**: As a fallback or for single-instance applications
+For distributed deployments, use Redis storage:
 
-The rate limiter automatically uses Redis if configured, falling back to in-memory storage if Redis is unavailable.
+```go
+redisClient := redis.NewClient(&redis.Options{
+    Addr: "localhost:6379",
+})
 
-## Rate Limiting Headers
+app.Use(rateLimiter.RateLimiter(rateLimiter.RateLimiterConfig{
+    Redis: redisClient,
+    // ... other config
+}))
+```
 
-The middleware adds the following headers to responses:
+### In-Memory Storage
 
-- `X-RateLimit-Limit`: Maximum requests allowed in the window
-- `X-RateLimit-Remaining`: Remaining requests in the current window
-- `X-RateLimit-Reset`: Time until the rate limit resets (Unix timestamp)
+For single-instance deployments, use in-memory storage:
 
-## Error Handling
-
-When a rate limit is exceeded, the middleware returns a `429 Too Many Requests` response with a JSON body:
-
-```json
-{
-    "error": "rate limit exceeded",
-    "retry_after": 3600
-}
+```go
+app.Use(rateLimiter.RateLimiter(rateLimiter.RateLimiterConfig{
+    Redis: nil, // Use in-memory storage
+    // ... other config
+}))
 ```
 
 ## Best Practices
 
-1. Always configure a reasonable `DefaultPolicy` for unknown user tiers
-2. Use Redis storage in production environments with multiple instances
-3. Implement proper user identification and tier determination logic
-4. Monitor rate limit headers to track usage patterns
-5. Configure appropriate burst capacities based on your application's needs
+1. **Configure Appropriate Limits**
+   - Set reasonable burst capacities
+   - Adjust token rates based on your API's capacity
+   - Consider different limits for different endpoints
+
+2. **Security Settings**
+   - Use strong bypass tokens
+   - Regularly rotate bypass tokens
+   - Keep whitelist IPs up to date
+   - Monitor failed attempt patterns
+
+3. **Storage Considerations**
+   - Use Redis for distributed deployments
+   - Monitor Redis memory usage
+   - Set appropriate TTLs for rate limit keys
+
+4. **Monitoring**
+   - Monitor rate limit hits and misses
+   - Track blocked IPs
+   - Monitor failed attempt patterns
+   - Adjust limits based on usage patterns
 
 ## Contributing
 
